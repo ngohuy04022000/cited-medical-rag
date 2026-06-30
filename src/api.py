@@ -1,0 +1,133 @@
+"""FastAPI service exposing the Cited Medical RAG pipeline.
+
+Run locally:
+    uvicorn src.api:app --reload
+Then open http://localhost:8000/docs for interactive Swagger UI.
+
+Endpoints:
+    GET  /health  — liveness + index/config info (no API key required)
+    POST /query   — answer a question with citations, confidence, and latency
+"""
+
+import logging
+import os
+from contextlib import asynccontextmanager
+from typing import List, Optional
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel, Field
+
+from src.config import get_settings, setup_logging
+from src.generator import GenerationError
+from src.rag import RAGPipeline
+
+setup_logging()
+logger = logging.getLogger("cmrag.api")
+settings = get_settings()
+
+_pipeline: Optional[RAGPipeline] = None
+
+
+def get_pipeline() -> RAGPipeline:
+    """Module-level singleton: the index is built once and reused per request."""
+    global _pipeline
+    if _pipeline is None:
+        _pipeline = RAGPipeline(settings=settings)
+    return _pipeline
+
+
+def _api_key_configured() -> bool:
+    return bool(os.environ.get("ANTHROPIC_API_KEY") or settings.anthropic_api_key)
+
+
+def _generation_ready() -> bool:
+    """Local backend needs no key; Anthropic backend needs one."""
+    return settings.backend == "local" or _api_key_configured()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Warm the retriever at startup so the first request isn't slow.
+    get_pipeline()
+    logger.info("Cited Medical RAG API ready (model=%s)", settings.model)
+    yield
+
+
+app = FastAPI(
+    title="Cited Medical RAG API",
+    version="1.0.0",
+    description="Citation-aware retinal-disease knowledge assistant.",
+    lifespan=lifespan,
+)
+
+
+class QueryRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=2000, description="User question")
+    include_chunks: bool = Field(
+        False, description="Include the raw retrieved chunks in the response"
+    )
+
+
+class RetrievedChunk(BaseModel):
+    source: str
+    section: Optional[str] = None
+    chunk_id: str
+    score: float
+    text: str
+
+
+class QueryResponse(BaseModel):
+    question: str
+    answer: str
+    sources: List[str]
+    confidence: float
+    refused: bool
+    latency_ms: float
+    retrieved_chunks: Optional[List[RetrievedChunk]] = None
+
+
+@app.get("/health")
+def health(pipeline: RAGPipeline = Depends(get_pipeline)) -> dict:
+    return {
+        "status": "ok",
+        "backend": settings.backend,
+        "model": settings.model,
+        "num_chunks": pipeline.num_chunks,
+        "api_key_configured": _api_key_configured(),
+        "generation_ready": _generation_ready(),
+    }
+
+
+@app.post("/query", response_model=QueryResponse)
+def query(
+    request: QueryRequest,
+    pipeline: RAGPipeline = Depends(get_pipeline),
+) -> QueryResponse:
+    if not _generation_ready():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "ANTHROPIC_API_KEY is not configured. Set it, or start the server "
+                "with RAG_BACKEND=local to run offline without a key."
+            ),
+        )
+
+    try:
+        result = pipeline.query(request.question)
+    except GenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    chunks = result["retrieved_chunks"] if request.include_chunks else None
+    return QueryResponse(
+        question=result["question"],
+        answer=result["answer"],
+        sources=result["sources"],
+        confidence=result["confidence"],
+        refused=result["refused"],
+        latency_ms=result["latency_ms"],
+        retrieved_chunks=chunks,
+    )
