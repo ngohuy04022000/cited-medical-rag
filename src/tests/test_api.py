@@ -123,3 +123,30 @@ def test_health_reports_backend(client):
     body = c.get("/health").json()
     assert "backend" in body
     assert "generation_ready" in body
+
+
+def test_unhandled_exception_returns_clean_500(client, monkeypatch):
+    """
+    Regression: an exception that isn't a GenerationError (e.g. a bug in the
+    pipeline, or an SDK-internal TypeError) must not leak a raw traceback to
+    the client — the global exception handler should map it to a clean,
+    generic 500 JSON body instead.
+
+    Uses a dedicated TestClient with raise_server_exceptions=False: that flag
+    reproduces how a real ASGI server behaves (client only ever sees the HTTP
+    response). The shared `client` fixture keeps the default True so that any
+    *other* test hitting an unexpected 500 still fails loudly.
+    """
+    _, fake = client
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    def boom(question):
+        raise TypeError("simulated unexpected SDK-internal failure")
+
+    fake.query = boom
+    with TestClient(api_mod.app, raise_server_exceptions=False) as c2:
+        resp = c2.post("/query", json={"question": "What is glaucoma?"})
+    assert resp.status_code == 500
+    assert "detail" in resp.json()
+    assert "TypeError" not in resp.text
+    assert "Traceback" not in resp.text

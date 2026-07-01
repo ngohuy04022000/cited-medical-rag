@@ -38,17 +38,22 @@ def _normalize_backend(raw: str) -> str:
     return "anthropic"
 
 
-def _get_int(name: str, default: int) -> int:
+def _get_int(name: str, default: int, min_value: Optional[int] = None) -> int:
     raw = os.environ.get(name)
     if raw is None or raw.strip() == "":
         return default
+    log = logging.getLogger("cmrag.config")
     try:
-        return int(raw)
+        value = int(raw)
     except ValueError:
-        logging.getLogger("cmrag.config").warning(
-            "Invalid int for %s=%r, using default %s", name, raw, default
-        )
+        log.warning("Invalid int for %s=%r, using default %s", name, raw, default)
         return default
+    if min_value is not None and value < min_value:
+        log.warning(
+            "%s=%s is below the minimum %s, clamping to %s", name, value, min_value, min_value
+        )
+        return min_value
+    return value
 
 
 def _get_float(name: str, default: float) -> float:
@@ -95,11 +100,11 @@ def get_settings() -> Settings:
         request_timeout=_get_float("RAG_REQUEST_TIMEOUT", 30.0),
         max_retries=_get_int("RAG_MAX_RETRIES", 3),
         docs_dir=os.environ.get("RAG_DOCS_DIR", _DEFAULT_DOCS_DIR),
-        top_k=_get_int("RAG_TOP_K", 5),
-        max_per_source=_get_int("RAG_MAX_PER_SOURCE", 2),
+        top_k=_get_int("RAG_TOP_K", 5, min_value=1),
+        max_per_source=_get_int("RAG_MAX_PER_SOURCE", 2, min_value=1),
         min_score=_get_float("RAG_MIN_SCORE", 0.01),
         local_min_confidence=_get_float("RAG_LOCAL_MIN_CONFIDENCE", 0.12),
-        chunk_size=_get_int("RAG_CHUNK_SIZE", 700),
+        chunk_size=_get_int("RAG_CHUNK_SIZE", 700, min_value=50),
         log_level=os.environ.get("RAG_LOG_LEVEL", "INFO"),
     )
 

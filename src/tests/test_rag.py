@@ -349,3 +349,67 @@ class TestOfflinePipeline:
         offline_rag.query("What is glaucoma?")
         # Offline backend must never construct an Anthropic client.
         assert offline_rag._client is None
+
+
+# ---------------------------------------------------------------------------
+# TestResilience — predicted failure scenarios and their hardening
+# ---------------------------------------------------------------------------
+
+class TestResilience:
+    def test_missing_docs_dir_raises_clear_error(self, tmp_path):
+        missing = tmp_path / "does_not_exist"
+        with pytest.raises(FileNotFoundError, match="RAG documents directory not found"):
+            load_documents(str(missing))
+
+    def test_empty_corpus_raises_clear_runtime_error(self, tmp_path, monkeypatch):
+        """A docs dir with only an excluded/empty file must fail fast with a
+        readable message instead of sklearn's cryptic 'empty vocabulary' error."""
+        (tmp_path / "README.md").write_text("excluded, not indexed", encoding="utf-8")
+        monkeypatch.setenv("RAG_BACKEND", "local")
+        with pytest.raises(RuntimeError, match="No documents found"):
+            RAGPipeline(docs_dir=str(tmp_path), settings=get_settings())
+
+    def test_top_k_zero_is_clamped_to_one(self, monkeypatch):
+        monkeypatch.setenv("RAG_TOP_K", "0")
+        assert get_settings().top_k == 1
+
+    def test_top_k_negative_is_clamped_to_one(self, monkeypatch):
+        monkeypatch.setenv("RAG_TOP_K", "-3")
+        assert get_settings().top_k == 1
+
+    def test_chunk_size_too_small_is_clamped(self, monkeypatch):
+        monkeypatch.setenv("RAG_CHUNK_SIZE", "1")
+        assert get_settings().chunk_size == 50
+
+    def test_missing_api_key_raises_generation_error_not_raw_typeerror(self, monkeypatch):
+        """
+        Regression: anthropic.Anthropic(api_key=None) does NOT raise at
+        construction time in this SDK version — it raises a bare TypeError
+        deep inside .messages.create() instead, which is not an
+        anthropic.APIError and was previously left uncaught. generate_answer
+        must now catch the missing-key case proactively and raise a clean
+        GenerationError before ever reaching the SDK call.
+        """
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        settings = get_settings()
+        assert settings.backend == "anthropic"
+        chunks = [{"text": "Glaucoma is...", "source": "01_glaucoma.md"}]
+        with pytest.raises(GenerationError, match="ANTHROPIC_API_KEY is not set"):
+            generate_answer("What is glaucoma?", chunks, settings=settings)
+
+    def test_pipeline_client_property_raises_generation_error_without_key(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("RAG_BACKEND", "anthropic")
+        rag = RAGPipeline(settings=get_settings())
+        with pytest.raises(GenerationError, match="ANTHROPIC_API_KEY is not set"):
+            rag.query("What is glaucoma?")
+
+    def test_empty_llm_response_raises_generation_error(self):
+        """A stop_reason with zero content blocks must not crash with a raw
+        IndexError on response.content[0]."""
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value.content = []
+        mock_client.messages.create.return_value.stop_reason = "end_turn"
+        chunks = [{"text": "Glaucoma is...", "source": "01_glaucoma.md"}]
+        with pytest.raises(GenerationError, match="empty response"):
+            generate_answer("What is glaucoma?", chunks, client=mock_client)

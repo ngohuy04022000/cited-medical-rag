@@ -54,6 +54,16 @@ def build_context(chunks: List[Dict]) -> str:
 
 def _build_client(settings: Settings) -> anthropic.Anthropic:
     api_key = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        # Fail fast with a clear message. Without this check, the SDK doesn't
+        # validate credentials at construction time — it raises a bare
+        # TypeError deep inside .messages.create() instead, which is not an
+        # anthropic.APIError and would otherwise propagate as an unhandled
+        # crash instead of a clean GenerationError.
+        raise GenerationError(
+            "ANTHROPIC_API_KEY is not set. Set it in your environment, or run "
+            "with RAG_BACKEND=local to use the offline extractive backend."
+        )
     return anthropic.Anthropic(
         api_key=api_key,
         max_retries=settings.max_retries,
@@ -99,6 +109,12 @@ def generate_answer(
     except anthropic.APIError as exc:  # network / status / timeout after retries
         logger.error("Anthropic API call failed: %s", exc)
         raise GenerationError(f"LLM generation failed: {exc}") from exc
+
+    if not response.content:
+        # Defensive: a stop_reason with no content blocks (e.g. empty completion)
+        # would otherwise raise an unhandled IndexError below.
+        logger.error("Anthropic response had no content blocks (stop_reason=%s)", response.stop_reason)
+        raise GenerationError("LLM returned an empty response.")
 
     return response.content[0].text.strip()
 

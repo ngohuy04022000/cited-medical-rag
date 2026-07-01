@@ -1,5 +1,6 @@
 """Interactive CLI for the Cited Medical RAG system."""
 
+import logging
 import os
 import sys
 
@@ -10,6 +11,8 @@ load_dotenv()
 from src.config import get_settings, setup_logging
 from src.generator import GenerationError
 from src.rag import RAGPipeline
+
+logger = logging.getLogger("cmrag.cli")
 
 
 def _print_result(result: dict) -> None:
@@ -46,7 +49,11 @@ def main() -> None:
     print(f"Backend: {settings.backend}" + ("  (offline, no API key)" if settings.backend == "local" else ""))
     print("Type 'quit' or press Ctrl+C to exit.\n")
 
-    rag = RAGPipeline(settings=settings)
+    try:
+        rag = RAGPipeline(settings=settings)
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(f"Error: could not start the RAG pipeline: {exc}")
+        sys.exit(1)
 
     while True:
         try:
@@ -62,6 +69,13 @@ def main() -> None:
             result = rag.query(question)
         except GenerationError as exc:
             print(f"\n[error] {exc}\nPlease try again in a moment.\n")
+            continue
+        except Exception:
+            # Last-resort safety net: one bad question must not crash the
+            # whole interactive session. Full traceback goes to the log;
+            # the user gets a short, actionable message.
+            logger.exception("Unexpected error while answering question: %r", question)
+            print("\n[error] Something went wrong answering that question. Please try again.\n")
             continue
 
         _print_result(result)

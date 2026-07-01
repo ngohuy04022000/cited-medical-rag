@@ -23,7 +23,17 @@ def load_documents(docs_dir: str, chunk_size: int = DEFAULT_CHUNK_SIZE) -> List[
     """
     Read all .md files in docs_dir (excluding README.md) and return a flat list
     of section-aware chunks, each with keys: text, source, section, chunk_id.
+
+    Raises FileNotFoundError with an actionable message if docs_dir doesn't
+    exist (e.g. a misconfigured RAG_DOCS_DIR), instead of the harder-to-read
+    error os.listdir raises on its own.
     """
+    if not os.path.isdir(docs_dir):
+        raise FileNotFoundError(
+            f"RAG documents directory not found: {docs_dir!r}. "
+            "Check RAG_DOCS_DIR or the docs_dir argument."
+        )
+
     chunks: List[Dict] = []
 
     for filename in sorted(os.listdir(docs_dir)):

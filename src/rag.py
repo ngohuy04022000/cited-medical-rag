@@ -8,7 +8,7 @@ import anthropic
 
 from src.chunker import load_documents
 from src.config import Settings, get_settings
-from src.generator import REFUSAL_PHRASE, extractive_answer, generate_answer
+from src.generator import GenerationError, REFUSAL_PHRASE, extractive_answer, generate_answer
 from src.retriever import TFIDFRetriever
 
 logger = logging.getLogger("cmrag.rag")
@@ -32,6 +32,13 @@ class RAGPipeline:
 
         resolved_dir = docs_dir or self.settings.docs_dir
         chunks = load_documents(resolved_dir, chunk_size=self.settings.chunk_size)
+        if not chunks:
+            # Fail with a clear message here rather than letting
+            # TfidfVectorizer raise its cryptic "empty vocabulary" ValueError.
+            raise RuntimeError(
+                f"No documents found in {resolved_dir!r} (all files empty or "
+                "excluded). The retriever cannot be built from an empty corpus."
+            )
         self.num_chunks = len(chunks)
         self.retriever = TFIDFRetriever(chunks, min_score=self.settings.min_score)
         logger.info(
@@ -46,6 +53,13 @@ class RAGPipeline:
         underlying HTTP connection pool warm and avoids per-request setup cost.
         """
         if self._client is None:
+            if not self.settings.anthropic_api_key:
+                # Fail fast with a clear message rather than letting the SDK
+                # raise a bare TypeError deep inside .messages.create().
+                raise GenerationError(
+                    "ANTHROPIC_API_KEY is not set. Set it in your environment, or "
+                    "run with RAG_BACKEND=local to use the offline extractive backend."
+                )
             self._client = anthropic.Anthropic(
                 api_key=self.settings.anthropic_api_key,
                 max_retries=self.settings.max_retries,
