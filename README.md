@@ -64,12 +64,25 @@ Runs 3 answerable + 2 must-refuse questions and prints PASS/FAIL for each.
 uvicorn src.api:app --reload
 ```
 
-Then open **http://localhost:8000/docs** for interactive Swagger UI.
+Then open:
+- **http://localhost:8000/** — web UI (chat-style, shows citations, confidence, latency)
+- **http://localhost:8000/docs** — interactive Swagger UI
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
+| `/` | GET | Single-page web UI (`src/static/index.html`, no build step) |
 | `/health` | GET | Liveness + index size + config (no API key needed) |
 | `/query` | POST | `{"question": "...", "include_chunks": false}` → cited answer + confidence + latency |
+
+The UI works with either backend — start with `RAG_BACKEND=local` to demo fully offline,
+or set `ANTHROPIC_API_KEY` for LLM-generated answers. It polls `/health` every 15s to
+show backend/readiness status in the header.
+
+**Screenshots** (`docs/screenshots/`, captured running offline with `RAG_BACKEND=local`):
+
+| Empty state | Answer with citation | Refusal state |
+|---|---|---|
+| ![Empty state](docs/screenshots/01_empty_state.png) | ![Answer with citation](docs/screenshots/02_answer_with_citation.png) | ![Refusal state](docs/screenshots/03_refusal_state.png) |
 
 Example:
 
@@ -132,7 +145,9 @@ src/
   generator.py   ← Anthropic Claude API: cited answers, refusal, retries, error handling
   rag.py         ← orchestrator: chunker → retriever → generator (cached client)
   main.py        ← interactive CLI (shows sources, scores, confidence, latency)
-  api.py         ← FastAPI service: /query, /health, /docs
+  api.py         ← FastAPI service: /, /query, /health, /docs
+  static/
+    index.html   ← single-page web UI (chat-style, no build step)
   tests/
     test_rag.py  ← unit tests (mocks LLM; covers edge cases + config + errors)
     test_api.py  ← HTTP-layer tests (mocked pipeline; no API calls)

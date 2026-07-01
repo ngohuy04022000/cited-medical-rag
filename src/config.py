@@ -28,7 +28,14 @@ def _normalize_backend(raw: str) -> str:
     value = (raw or "anthropic").strip().lower()
     if value in _LOCAL_ALIASES:
         return "local"
-    return "anthropic" if value not in ("anthropic",) else value
+    if value != "anthropic":
+        logging.getLogger("cmrag.config").warning(
+            "Unrecognized RAG_BACKEND=%r, falling back to 'anthropic'. "
+            "Valid values: 'anthropic', or one of %s for offline mode.",
+            raw,
+            sorted(_LOCAL_ALIASES),
+        )
+    return "anthropic"
 
 
 def _get_int(name: str, default: int) -> int:

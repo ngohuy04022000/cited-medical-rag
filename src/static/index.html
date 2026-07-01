@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cited Medical RAG · Retinal Knowledge Assistant</title>
+<style>
+  :root{
+    --bg:#fafafa;
+    --surface:#ffffff;
+    --border:#e5e7eb;
+    --text:#18181b;
+    --muted:#71717a;
+    --muted-2:#a1a1aa;
+    --accent:#2563eb;
+    --accent-soft:#eff6ff;
+    --ok:#16a34a;
+    --warn:#d97706;
+    --danger:#dc2626;
+    --radius:12px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    min-height:100%;
+    display:flex;
+    flex-direction:column;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  header{
+    padding:18px 32px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    border-bottom:1px solid var(--border);
+    background:var(--surface);
+    flex-wrap:wrap;
+  }
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand .logo{
+    width:34px;height:34px;border-radius:9px;
+    background:var(--text);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;color:#fff;font-size:13px;letter-spacing:.2px;
+    flex-shrink:0;
+  }
+  .brand h1{font-size:15px;margin:0;font-weight:600;letter-spacing:-.1px;}
+  .brand p{margin:1px 0 0;font-size:12.5px;color:var(--muted);}
+
+  .status-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .pill{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:5px 10px;border-radius:8px;
+    font-size:12px;font-weight:500;
+    border:1px solid var(--border);
+    background:var(--bg);
+    color:var(--muted);
+    white-space:nowrap;
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--muted-2);}
+  .dot.ok{background:var(--ok);}
+  .dot.bad{background:var(--danger);}
+  .dot.local{background:var(--warn);}
+
+  main{
+    flex:1;
+    display:flex;
+    justify-content:center;
+    padding:28px 20px 120px;
+    overflow-y:auto;
+  }
+  .wrap{width:100%;max-width:760px;display:flex;flex-direction:column;gap:16px;}
+
+  .disclaimer{
+    background:var(--surface);
+    border:1px solid var(--border);
+    color:var(--muted);
+    padding:12px 16px;
+    border-radius:var(--radius);
+    font-size:12.5px;
+    line-height:1.6;
+  }
+  .disclaimer b{color:var(--text);}
+
+  .empty{
+    margin-top:56px;
+    text-align:center;
+  }
+  .empty h2{color:var(--text);font-size:20px;margin:0 0 6px;font-weight:600;letter-spacing:-.2px;}
+  .empty p{color:var(--muted);font-size:14px;margin:0;}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:22px;}
+  .chip{
+    padding:9px 14px;border-radius:9px;
+    background:var(--surface);border:1px solid var(--border);
+    color:var(--text);font-size:13px;cursor:pointer;
+    transition:.15s border-color, .15s background;
+  }
+  .chip:hover{border-color:var(--accent);background:var(--accent-soft);}
+
+  .msg{display:flex;gap:10px;max-width:100%;}
+  .msg.user{flex-direction:row-reverse;}
+  .avatar{
+    width:28px;height:28px;border-radius:8px;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+    font-size:11px;font-weight:600;
+    margin-top:2px;
+  }
+  .avatar.user{background:var(--text);color:#fff;}
+  .avatar.bot{background:var(--accent-soft);color:var(--accent);}
+
+  .bubble{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:12px 15px;
+    max-width:80%;
+    line-height:1.6;
+    font-size:14.5px;
+    white-space:pre-wrap;
+  }
+  .msg.user .bubble{background:var(--text);border-color:var(--text);color:#fff;}
+  .msg.bot .bubble.refused{border-color:#fecaca;background:#fef2f2;}
+
+  .cite{
+    display:inline-block;
+    background:var(--accent-soft);
+    color:var(--accent);
+    border-radius:5px;
+    padding:0 6px;
+    font-size:12px;
+    font-weight:600;
+    margin:0 1px;
+  }
+
+  .meta{
+    display:flex;gap:6px;flex-wrap:wrap;
+    margin-top:10px;
+  }
+  .meta .tag{
+    font-size:11px;color:var(--muted);
+    background:var(--bg);border:1px solid var(--border);
+    padding:2px 8px;border-radius:6px;
+  }
+
+  .sources{margin-top:10px;display:flex;flex-direction:column;gap:5px;}
+  .source-item{
+    font-size:12px;color:var(--muted);
+    background:var(--bg);border:1px solid var(--border);
+    border-radius:8px;padding:7px 10px;
+  }
+  .source-item b{color:var(--text);font-weight:600;}
+
+  .typing{display:flex;gap:4px;padding:5px 0;}
+  .typing span{
+    width:5px;height:5px;border-radius:50%;background:var(--muted-2);
+    animation:blink 1.2s infinite ease-in-out;
+  }
+  .typing span:nth-child(2){animation-delay:.2s;}
+  .typing span:nth-child(3){animation-delay:.4s;}
+  @keyframes blink{0%,80%,100%{opacity:.3;}40%{opacity:1;}}
+
+  footer{
+    position:fixed;bottom:0;left:0;right:0;
+    padding:18px 20px 22px;
+    background:linear-gradient(0deg, var(--bg) 60%, transparent);
+  }
+  .composer{
+    max-width:760px;margin:0 auto;
+    display:flex;gap:8px;align-items:flex-end;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:8px 8px 8px 16px;
+    box-shadow:0 4px 16px rgba(0,0,0,.06);
+  }
+  textarea{
+    flex:1;resize:none;border:none;outline:none;
+    background:transparent;color:var(--text);
+    font-size:14.5px;font-family:inherit;
+    max-height:140px;line-height:1.5;padding:8px 0;
+  }
+  textarea::placeholder{color:var(--muted-2);}
+  button.send{
+    background:var(--text);
+    border:none;color:#fff;font-weight:600;
+    border-radius:9px;padding:10px 16px;font-size:13.5px;
+    cursor:pointer;flex-shrink:0;
+    transition:.15s opacity;
+  }
+  button.send:disabled{opacity:.35;cursor:not-allowed;}
+  button.send:not(:disabled):hover{opacity:.85;}
+
+  .hint{
+    max-width:760px;margin:8px auto 0;
+    font-size:11.5px;color:var(--muted-2);text-align:center;
+  }
+
+  ::-webkit-scrollbar{width:8px;}
+  ::-webkit-scrollbar-thumb{background:#e4e4e7;border-radius:8px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">CM</div>
+    <div>
+      <h1>Retinal Knowledge Assistant</h1>
+      <p>Glaucoma · Diabetic Retinopathy · Cataract · AMD · Screening Workflow</p>
+    </div>
+  </div>
+  <div class="status-row" id="statusRow">
+    <span class="pill"><span class="dot" id="dotStatus"></span><span id="txtStatus">Đang kết nối…</span></span>
+    <span class="pill" id="pillBackend">backend: —</span>
+    <span class="pill" id="pillChunks">tài liệu: —</span>
+  </div>
+</header>
+
+<main>
+  <div class="wrap" id="wrap">
+    <div class="disclaimer">
+      <b>Lưu ý:</b> Công cụ hỗ trợ tra cứu kiến thức, không thay thế chẩn đoán y khoa. Câu trả lời chỉ dựa trên
+      5 tài liệu tham khảo và luôn kèm trích dẫn nguồn; nếu không có trong tài liệu, hệ thống sẽ từ chối trả lời
+      thay vì suy đoán.
+    </div>
+
+    <div class="empty" id="emptyState">
+      <h2>Bạn muốn hỏi gì về bệnh võng mạc?</h2>
+      <p>Chọn một câu hỏi mẫu hoặc gõ câu hỏi của riêng bạn bên dưới.</p>
+      <div class="chips">
+        <div class="chip" data-q="Glaucoma là gì và tại sao phát hiện sớm lại quan trọng?">Glaucoma là gì?</div>
+        <div class="chip" data-q="Các giai đoạn của bệnh võng mạc tiểu đường là gì?">Giai đoạn võng mạc tiểu đường</div>
+        <div class="chip" data-q="Nền tảng Cited Medical RAG sàng lọc những bệnh gì và yếu tố nguy cơ là gì?">Nền tảng sàng lọc AI phát hiện gì?</div>
+        <div class="chip" data-q="Tỷ lệ thành công của phẫu thuật glaucoma là bao nhiêu?">Tỷ lệ thành công phẫu thuật? (kỳ vọng từ chối)</div>
+      </div>
+    </div>
+
+    <div id="messages"></div>
+  </div>
+</main>
+
+<footer>
+  <div class="composer">
+    <textarea id="input" rows="1" placeholder="Nhập câu hỏi về glaucoma, võng mạc tiểu đường, đục thủy tinh thể, AMD…"></textarea>
+    <button class="send" id="sendBtn">Gửi</button>
+  </div>
+  <div class="hint">Enter để gửi · Shift+Enter xuống dòng</div>
+</footer>
+
+<script>
+const API_BASE = "";
+const messagesEl = document.getElementById("messages");
+const emptyState = document.getElementById("emptyState");
+const inputEl = document.getElementById("input");
+const sendBtn = document.getElementById("sendBtn");
+const dotStatus = document.getElementById("dotStatus");
+const txtStatus = document.getElementById("txtStatus");
+const pillBackend = document.getElementById("pillBackend");
+const pillChunks = document.getElementById("pillChunks");
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+}
+
+function linkifyCitations(text) {
+  const escaped = escapeHtml(text);
+  return escaped.replace(/\[Source:\s*([^\]]+)\]/g, (m, src) =>
+    `<span class="cite">${src.trim()}</span>`
+  );
+}
+
+function addMessage(role, html) {
+  emptyState.style.display = "none";
+  const row = document.createElement("div");
+  row.className = `msg ${role}`;
+  row.innerHTML = `
+    <div class="avatar ${role}">${role === "user" ? "Bạn" : "AI"}</div>
+    <div class="bubble">${html}</div>
+  `;
+  messagesEl.appendChild(row);
+  row.scrollIntoView({behavior:"smooth", block:"end"});
+  return row;
+}
+
+function addTyping() {
+  const row = addMessage("bot", `<div class="typing"><span></span><span></span><span></span></div>`);
+  return row;
+}
+
+async function refreshHealth() {
+  try {
+    const r = await fetch(`${API_BASE}/health`);
+    const data = await r.json();
+    dotStatus.className = "dot " + (data.generation_ready ? "ok" : (data.backend === "local" ? "local" : "bad"));
+    txtStatus.textContent = data.generation_ready ? "Sẵn sàng" : "Chưa cấu hình API key";
+    pillBackend.textContent = "backend: " + data.backend + (data.backend === "local" ? " (offline)" : "");
+    pillChunks.textContent = "tài liệu: " + data.num_chunks + " đoạn";
+  } catch (e) {
+    dotStatus.className = "dot bad";
+    txtStatus.textContent = "Không kết nối được máy chủ";
+  }
+}
+
+async function sendQuestion(question) {
+  addMessage("user", escapeHtml(question));
+  const typingRow = addTyping();
+  sendBtn.disabled = true;
+
+  try {
+    const res = await fetch(`${API_BASE}/query`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, include_chunks: true })
+    });
+
+    typingRow.remove();
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({detail: "Lỗi không xác định."}));
+      addMessage("bot", `<span style="color:var(--danger)">${escapeHtml(err.detail || "Có lỗi xảy ra.")}</span>`);
+      return;
+    }
+
+    const data = await res.json();
+    const bubbleClass = data.refused ? "refused" : "";
+    const answerHtml = linkifyCitations(data.answer);
+
+    let sourcesHtml = "";
+    if (data.retrieved_chunks && data.retrieved_chunks.length) {
+      const seen = new Set();
+      const items = data.retrieved_chunks.filter(c => {
+        if (seen.has(c.source)) return false;
+        seen.add(c.source);
+        return true;
+      }).map(c => `
+        <div class="source-item">
+          <b>${escapeHtml(c.source)}</b> · relevance ${c.score.toFixed(2)}${c.section ? " · " + escapeHtml(c.section) : ""}
+        </div>
+      `).join("");
+      sourcesHtml = `<div class="sources">${items}</div>`;
+    }
+
+    const row = addMessage("bot", "");
+    row.querySelector(".bubble").innerHTML = `
+      ${answerHtml}
+      <div class="meta">
+        <span class="tag">confidence ${data.confidence.toFixed(2)}</span>
+        <span class="tag">${data.latency_ms.toFixed(0)} ms</span>
+        ${data.refused ? '<span class="tag" style="color:var(--danger)">từ chối</span>' : ""}
+      </div>
+      ${sourcesHtml}
+    `;
+    if (bubbleClass) row.querySelector(".bubble").classList.add(bubbleClass);
+
+  } catch (e) {
+    typingRow.remove();
+    addMessage("bot", `<span style="color:var(--danger)">Không thể kết nối tới máy chủ. Kiểm tra lại server.</span>`);
+  } finally {
+    sendBtn.disabled = false;
+    inputEl.focus();
+  }
+}
+
+function handleSend() {
+  const q = inputEl.value.trim();
+  if (!q) return;
+  inputEl.value = "";
+  inputEl.style.height = "auto";
+  sendQuestion(q);
+}
+
+sendBtn.addEventListener("click", handleSend);
+inputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    handleSend();
+  }
+});
+inputEl.addEventListener("input", () => {
+  inputEl.style.height = "auto";
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + "px";
+});
+document.querySelectorAll(".chip").forEach(chip => {
+  chip.addEventListener("click", () => sendQuestion(chip.dataset.q));
+});
+
+refreshHealth();
+setInterval(refreshHealth, 15000);
+</script>
+</body>
+</html>

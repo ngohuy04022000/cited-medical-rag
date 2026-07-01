@@ -40,14 +40,21 @@ def load_documents(docs_dir: str, chunk_size: int = DEFAULT_CHUNK_SIZE) -> List[
 
 
 def _chunk_markdown(content: str, filename: str, chunk_size: int) -> List[Dict]:
-    """Split a single document into section-aware chunks."""
-    paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
+    """Split a single document into section-aware chunks.
 
+    Headings are detected per-line (not per blank-line-separated paragraph
+    block), so a heading immediately followed by body text on the very next
+    line — with no blank line between them — is still recognized as a
+    section header instead of being absorbed into the chunk text verbatim
+    (which would leak raw "#" markdown into the LLM context and leave
+    `section` empty for that part of the document).
+    """
     results: List[Dict] = []
     current_section = ""
     buffer: List[str] = []
     buffer_len = 0
     next_id = 0
+    paragraph_lines: List[str] = []
 
     def flush() -> None:
         nonlocal buffer, buffer_len, next_id
@@ -65,21 +72,35 @@ def _chunk_markdown(content: str, filename: str, chunk_size: int) -> List[Dict]:
         buffer = []
         buffer_len = 0
 
-    for para in paragraphs:
-        heading = _HEADING_RE.match(para)
-        if heading:
-            # A heading starts a new section. Flush the previous one; the heading
-            # text becomes `section` metadata rather than a standalone chunk.
-            flush()
-            current_section = heading.group(2).strip()
-            continue
-
+    def flush_paragraph() -> None:
+        nonlocal paragraph_lines, buffer, buffer_len
+        para = "\n".join(paragraph_lines).strip()
+        paragraph_lines = []
+        if not para:
+            return
         # Start a fresh chunk once the buffer would overflow the target size.
         if buffer and buffer_len + len(para) > chunk_size:
             flush()
         buffer.append(para)
         buffer_len += len(para)
 
+    for line in content.split("\n"):
+        heading = _HEADING_RE.match(line)
+        if heading:
+            # A heading starts a new section. Flush any pending paragraph and
+            # chunk; the heading text becomes `section` metadata rather than
+            # part of a chunk's body text.
+            flush_paragraph()
+            flush()
+            current_section = heading.group(2).strip()
+            continue
+
+        if line.strip() == "":
+            flush_paragraph()
+        else:
+            paragraph_lines.append(line)
+
+    flush_paragraph()
     flush()
 
     # Fallback: a document that is only a heading (no body) still yields one chunk

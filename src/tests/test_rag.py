@@ -16,8 +16,8 @@ from unittest.mock import MagicMock, patch
 import anthropic
 import httpx
 
-from src.chunker import load_documents
-from src.config import get_settings
+from src.chunker import _chunk_markdown, load_documents
+from src.config import get_settings, _normalize_backend
 from src.rag import RAGPipeline
 from src.retriever import TFIDFRetriever
 from src.generator import (
@@ -91,6 +91,27 @@ class TestChunker:
         per_source = Counter(c["source"] for c in chunks)
         for source, count in per_source.items():
             assert 1 <= count <= 5, f"{source} produced {count} chunks"
+
+    def test_heading_without_blank_line_is_still_detected(self):
+        """
+        Regression: a heading immediately followed by body text on the very next
+        line (no blank line between them) must still be recognized as a section
+        header. Before the fix, paragraph-block splitting on "\\n\\n" swallowed
+        the "# Heading" line into the chunk's body text verbatim (leaking raw
+        markdown into LLM context) and left `section` empty.
+        """
+        content = (
+            "# Some New Disease\n"
+            "This paragraph has no blank line after the heading above it.\n\n"
+            "Second paragraph, normally separated."
+        )
+        chunks = _chunk_markdown(content, "test.md", chunk_size=700)
+        assert chunks, "heading-only-no-blank-line content produced no chunks"
+        for c in chunks:
+            assert c["section"] == "Some New Disease"
+            assert not c["text"].lstrip().startswith("#"), (
+                f"raw heading markdown leaked into chunk text: {c['text']!r}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +204,29 @@ class TestConfig:
         monkeypatch.setenv("RAG_TOP_K", "not-a-number")
         settings = get_settings()
         assert settings.top_k == 5
+
+    def test_backend_local_aliases_normalize_to_local(self):
+        for alias in ("local", "Local", "OFFLINE", "extractive", "mock"):
+            assert _normalize_backend(alias) == "local"
+
+    def test_backend_unrecognized_value_warns_and_falls_back(self, caplog):
+        """
+        Regression: a typo like RAG_BACKEND=lokal must not be silently treated
+        as valid input — it should fall back to 'anthropic' AND log a warning,
+        consistent with how _get_int/_get_float handle invalid values. Before
+        the fix, the fallback ternary was a no-op dead branch: any unrecognized
+        value silently became 'anthropic' with zero diagnostic.
+        """
+        with caplog.at_level("WARNING", logger="cmrag.config"):
+            result = _normalize_backend("lokal")
+        assert result == "anthropic"
+        assert any("lokal" in rec.getMessage() for rec in caplog.records)
+
+    def test_backend_anthropic_value_is_silent(self, caplog):
+        with caplog.at_level("WARNING", logger="cmrag.config"):
+            result = _normalize_backend("anthropic")
+        assert result == "anthropic"
+        assert caplog.records == []
 
 
 # ---------------------------------------------------------------------------

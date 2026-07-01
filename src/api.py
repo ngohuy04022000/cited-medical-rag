@@ -5,6 +5,7 @@ Run locally:
 Then open http://localhost:8000/docs for interactive Swagger UI.
 
 Endpoints:
+    GET  /        — single-page web UI (chat-style, no build step)
     GET  /health  — liveness + index/config info (no API key required)
     POST /query   — answer a question with citations, confidence, and latency
 """
@@ -12,6 +13,7 @@ Endpoints:
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
@@ -19,6 +21,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from src.config import get_settings, setup_logging
@@ -28,6 +32,8 @@ from src.rag import RAGPipeline
 setup_logging()
 logger = logging.getLogger("cmrag.api")
 settings = get_settings()
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 _pipeline: Optional[RAGPipeline] = None
 
@@ -63,6 +69,13 @@ app = FastAPI(
     description="Citation-aware retinal-disease knowledge assistant.",
     lifespan=lifespan,
 )
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 class QueryRequest(BaseModel):
