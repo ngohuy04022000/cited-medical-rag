@@ -78,11 +78,18 @@ The UI works with either backend — start with `RAG_BACKEND=local` to demo full
 or set `ANTHROPIC_API_KEY` for LLM-generated answers. It polls `/health` every 15s to
 show backend/readiness status in the header.
 
+**Citation display:** each `[Source: filename]` in the answer is rendered as a small,
+color-coded numbered badge (like a footnote), reused consistently for the same source.
+A "Nguồn trích dẫn" (references) list below the answer shows, for every cited source:
+a human-readable document label, the filename, section, relevance score, and the actual
+excerpt backing the claim — so a claim can always be traced to the real passage, not just
+a filename. Clicking a citation badge scrolls to and briefly highlights its reference card.
+
 **Screenshots** (`docs/screenshots/`, captured running offline with `RAG_BACKEND=local`):
 
-| Empty state | Answer with citation | Refusal state |
-|---|---|---|
-| ![Empty state](docs/screenshots/01_empty_state.png) | ![Answer with citation](docs/screenshots/02_answer_with_citation.png) | ![Refusal state](docs/screenshots/03_refusal_state.png) |
+| Empty state | Answer with numbered citations | Citation click → highlighted source | Refusal state |
+|---|---|---|---|
+| ![Empty state](docs/screenshots/01_empty_state.png) | ![Answer with citation](docs/screenshots/02_answer_with_citation.png) | ![Citation click flash](docs/screenshots/citation_click_flash.png) | ![Refusal state](docs/screenshots/03_refusal_state.png) |
 
 Example:
 

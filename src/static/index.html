@@ -128,15 +128,23 @@
   .msg.bot .bubble.refused{border-color:#fecaca;background:#fef2f2;}
 
   .cite{
-    display:inline-block;
-    background:var(--accent-soft);
-    color:var(--accent);
-    border-radius:5px;
-    padding:0 6px;
-    font-size:12px;
-    font-weight:600;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:16px;height:16px;
+    padding:0 4px;
+    border-radius:999px;
+    font-size:10.5px;
+    font-weight:700;
+    line-height:1;
     margin:0 1px;
+    position:relative;
+    top:-4px;
+    cursor:pointer;
+    border:none;
+    transition:.15s transform, .15s box-shadow;
   }
+  .cite:hover{transform:scale(1.15);}
 
   .meta{
     display:flex;gap:6px;flex-wrap:wrap;
@@ -148,13 +156,35 @@
     padding:2px 8px;border-radius:6px;
   }
 
-  .sources{margin-top:10px;display:flex;flex-direction:column;gap:5px;}
+  .ref-title{
+    font-size:11px;font-weight:700;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.04em;
+    margin:12px 0 6px;
+  }
+  .sources{display:flex;flex-direction:column;gap:6px;}
   .source-item{
+    display:flex;gap:8px;
     font-size:12px;color:var(--muted);
     background:var(--bg);border:1px solid var(--border);
-    border-radius:8px;padding:7px 10px;
+    border-left:3px solid var(--border);
+    border-radius:8px;padding:8px 10px;
+    scroll-margin-top:20px;
+    transition:.6s background, .6s border-color;
   }
-  .source-item b{color:var(--text);font-weight:600;}
+  .source-item.flash{background:var(--accent-soft);border-color:var(--accent);}
+  .source-item .ref-num{
+    flex-shrink:0;
+    width:16px;height:16px;border-radius:999px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:10.5px;font-weight:700;margin-top:1px;
+  }
+  .source-item .ref-body{flex:1;min-width:0;}
+  .source-item .ref-head{color:var(--text);font-weight:600;}
+  .source-item .ref-meta{color:var(--muted-2);margin-left:4px;}
+  .source-item .ref-excerpt{
+    display:block;margin-top:3px;color:var(--muted);
+    line-height:1.5;
+  }
 
   .typing{display:flex;gap:4px;padding:5px 0;}
   .typing span{
@@ -236,7 +266,7 @@
       <div class="chips">
         <div class="chip" data-q="Glaucoma là gì và tại sao phát hiện sớm lại quan trọng?">Glaucoma là gì?</div>
         <div class="chip" data-q="Các giai đoạn của bệnh võng mạc tiểu đường là gì?">Giai đoạn võng mạc tiểu đường</div>
-        <div class="chip" data-q="Nền tảng Cited Medical RAG sàng lọc những bệnh gì và yếu tố nguy cơ là gì?">Nền tảng sàng lọc AI phát hiện gì?</div>
+        <div class="chip" data-q="What conditions does the AI screening platform screen for and what are risk factors?">Nền tảng sàng lọc AI phát hiện gì? (đa nguồn)</div>
         <div class="chip" data-q="Tỷ lệ thành công của phẫu thuật glaucoma là bao nhiêu?">Tỷ lệ thành công phẫu thuật? (kỳ vọng từ chối)</div>
       </div>
     </div>
@@ -270,12 +300,65 @@ function escapeHtml(s) {
   }[c]));
 }
 
+// Short, human-readable labels for the known knowledge-base documents, so the
+// UI never forces the user to read raw filenames to know what a citation is.
+const DOC_LABELS = {
+  "01_glaucoma.md": "Glaucoma",
+  "02_diabetic_retinopathy.md": "Võng mạc tiểu đường",
+  "03_cataract.md": "Đục thủy tinh thể",
+  "04_amd.md": "Thoái hóa điểm vàng (AMD)",
+  "05_screening_workflow.md": "Quy trình sàng lọc bằng AI",
+};
+const CITE_COLORS = ["#2563eb", "#059669", "#d97706", "#dc2626", "#7c3aed", "#0891b2"];
+
+function docLabel(source) {
+  return DOC_LABELS[source] || source;
+}
+
+function citeColor(index) {
+  return CITE_COLORS[index % CITE_COLORS.length];
+}
+
+/**
+ * Replace every "[Source: filename]" in the answer with a small numbered,
+ * color-coded badge (like a footnote marker). The same source always gets
+ * the same number, assigned in order of first appearance, so the numbering
+ * lines up 1:1 with the reference list rendered below the answer.
+ * Returns { html, order } where `order` is the list of unique sources in
+ * citation-number order.
+ */
 function linkifyCitations(text) {
   const escaped = escapeHtml(text);
-  return escaped.replace(/\[Source:\s*([^\]]+)\]/g, (m, src) =>
-    `<span class="cite">${src.trim()}</span>`
-  );
+  const order = [];
+  const indexOf = {};
+  const html = escaped.replace(/\[Source:\s*([^\]]+)\]/g, (m, rawSrc) => {
+    const src = rawSrc.trim();
+    if (!(src in indexOf)) {
+      indexOf[src] = order.length;
+      order.push(src);
+    }
+    const n = indexOf[src];
+    const color = citeColor(n);
+    const label = escapeHtml(docLabel(src));
+    return `<sup class="cite" data-ref="ref-${n}" title="${label} (${escapeHtml(src)})" ` +
+      `style="background:${color}22;color:${color};" ` +
+      `onclick="focusReference(${n})">${n + 1}</sup>`;
+  });
+  return { html, order };
 }
+
+// Briefly highlights the reference card a citation badge points to, and
+// scrolls it into view — makes the link between an inline claim and the
+// passage that backs it immediately visible instead of asking the user to
+// scan a plain list.
+function focusReference(n) {
+  const el = document.getElementById(`ref-${n}`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  el.classList.add("flash");
+  setTimeout(() => el.classList.remove("flash"), 900);
+}
+window.focusReference = focusReference;
 
 function addMessage(role, html) {
   emptyState.style.display = "none";
@@ -331,21 +414,36 @@ async function sendQuestion(question) {
 
     const data = await res.json();
     const bubbleClass = data.refused ? "refused" : "";
-    const answerHtml = linkifyCitations(data.answer);
+    const { html: answerHtml, order: citedSources } = linkifyCitations(data.answer);
 
+    // Best (highest-scoring) retrieved chunk per source, used to show the
+    // actual excerpt backing each numbered citation — not just a filename.
     let sourcesHtml = "";
-    if (data.retrieved_chunks && data.retrieved_chunks.length) {
-      const seen = new Set();
-      const items = data.retrieved_chunks.filter(c => {
-        if (seen.has(c.source)) return false;
-        seen.add(c.source);
-        return true;
-      }).map(c => `
-        <div class="source-item">
-          <b>${escapeHtml(c.source)}</b> · relevance ${c.score.toFixed(2)}${c.section ? " · " + escapeHtml(c.section) : ""}
-        </div>
-      `).join("");
-      sourcesHtml = `<div class="sources">${items}</div>`;
+    if (citedSources.length && data.retrieved_chunks && data.retrieved_chunks.length) {
+      const bestChunkBySource = {};
+      for (const c of data.retrieved_chunks) {
+        const prev = bestChunkBySource[c.source];
+        if (!prev || c.score > prev.score) bestChunkBySource[c.source] = c;
+      }
+      const items = citedSources.map((src, n) => {
+        const c = bestChunkBySource[src];
+        const color = citeColor(n);
+        const excerpt = c ? escapeHtml(c.text).replace(/\s+/g, " ").slice(0, 180) : "";
+        const metaParts = [escapeHtml(src)];
+        if (c && c.section) metaParts.push(escapeHtml(c.section));
+        if (c) metaParts.push(`relevance ${c.score.toFixed(2)}`);
+        return `
+          <div class="source-item" id="ref-${n}" style="border-left-color:${color};">
+            <span class="ref-num" style="background:${color}22;color:${color};">${n + 1}</span>
+            <span class="ref-body">
+              <span class="ref-head">${escapeHtml(docLabel(src))}</span>
+              <span class="ref-meta">${metaParts.join(" · ")}</span>
+              ${excerpt ? `<span class="ref-excerpt">“${excerpt}${c.text.length > 180 ? "…" : ""}”</span>` : ""}
+            </span>
+          </div>
+        `;
+      }).join("");
+      sourcesHtml = `<div class="ref-title">Nguồn trích dẫn</div><div class="sources">${items}</div>`;
     }
 
     const row = addMessage("bot", "");
