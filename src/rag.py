@@ -95,6 +95,11 @@ class RAGPipeline:
                 retrieved,
                 min_confidence=self.settings.local_min_confidence,
             )
+        elif self.settings.backend == "hf":
+            # Small LLM running fully on this machine — no API key, no network.
+            from src.local_llm import local_llm_answer
+
+            answer = local_llm_answer(question, retrieved, settings=self.settings)
         else:
             # Only spin up the API client when there is context worth sending.
             client = self.client if retrieved else None

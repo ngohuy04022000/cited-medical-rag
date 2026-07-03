@@ -51,8 +51,9 @@ def _api_key_configured() -> bool:
 
 
 def _generation_ready() -> bool:
-    """Local backend needs no key; Anthropic backend needs one."""
-    return settings.backend == "local" or _api_key_configured()
+    """The offline 'local' and on-device 'hf' backends need no key; only the
+    Anthropic backend requires one."""
+    return settings.backend in ("local", "hf") or _api_key_configured()
 
 
 @asynccontextmanager

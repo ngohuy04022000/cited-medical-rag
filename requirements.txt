@@ -9,3 +9,11 @@ fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 pydantic>=2.0.0
 httpx>=0.27.0
+
+# Optional: on-device local LLM backend (RAG_BACKEND=hf).
+# Only needed if you run the local LLM instead of the Anthropic API or the
+# offline extractive backend. Install separately if you want it:
+#   pip install torch transformers accelerate
+# torch>=2.2.0
+# transformers>=4.45.0
+# accelerate>=0.34.0

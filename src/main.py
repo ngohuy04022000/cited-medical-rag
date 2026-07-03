@@ -44,9 +44,15 @@ def main() -> None:
         print("or run offline with no key:  RAG_BACKEND=local python -m src.main")
         sys.exit(1)
 
+    backend_note = {
+        "local": "  (offline extractive, no API key)",
+        "hf": "  (local LLM on this machine, no API key)",
+    }.get(settings.backend, "")
     print("Cited Medical RAG - Retinal Disease Knowledge Assistant")
     print("Knowledge base: Glaucoma, Diabetic Retinopathy, Cataract, AMD, Screening Workflow")
-    print(f"Backend: {settings.backend}" + ("  (offline, no API key)" if settings.backend == "local" else ""))
+    print(f"Backend: {settings.backend}{backend_note}")
+    if settings.backend == "hf":
+        print("(first question loads the model — this can take ~10-30s)")
     print("Type 'quit' or press Ctrl+C to exit.\n")
 
     try:

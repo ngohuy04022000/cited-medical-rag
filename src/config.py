@@ -21,19 +21,29 @@ _DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 # Generation backends:
 #   "anthropic" — call the Claude API (needs ANTHROPIC_API_KEY)
 #   "local"     — offline extractive answers from retrieved context (no API key)
+#   "hf"        — a small LLM downloaded to disk, run fully on this machine
+#                 via Hugging Face Transformers (no API key, no network)
 _LOCAL_ALIASES = {"local", "offline", "extractive", "mock"}
+_HF_ALIASES = {"hf", "huggingface", "local-llm", "qwen"}
+
+_DEFAULT_HF_MODEL_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "models", "Qwen2.5-1.5B-Instruct"
+)
 
 
 def _normalize_backend(raw: str) -> str:
     value = (raw or "anthropic").strip().lower()
     if value in _LOCAL_ALIASES:
         return "local"
+    if value in _HF_ALIASES:
+        return "hf"
     if value != "anthropic":
         logging.getLogger("cmrag.config").warning(
             "Unrecognized RAG_BACKEND=%r, falling back to 'anthropic'. "
-            "Valid values: 'anthropic', or one of %s for offline mode.",
+            "Valid values: 'anthropic', %s (offline extractive), or %s (local LLM).",
             raw,
             sorted(_LOCAL_ALIASES),
+            sorted(_HF_ALIASES),
         )
     return "anthropic"
 
@@ -87,6 +97,8 @@ class Settings:
     local_min_confidence: float
     chunk_size: int
     log_level: str
+    hf_model_dir: str
+    hf_max_new_tokens: int
 
 
 def get_settings() -> Settings:
@@ -106,6 +118,8 @@ def get_settings() -> Settings:
         local_min_confidence=_get_float("RAG_LOCAL_MIN_CONFIDENCE", 0.12),
         chunk_size=_get_int("RAG_CHUNK_SIZE", 700, min_value=50),
         log_level=os.environ.get("RAG_LOG_LEVEL", "INFO"),
+        hf_model_dir=os.environ.get("RAG_HF_MODEL_DIR", _DEFAULT_HF_MODEL_DIR),
+        hf_max_new_tokens=_get_int("RAG_HF_MAX_NEW_TOKENS", 400, min_value=32),
     )
 
 
