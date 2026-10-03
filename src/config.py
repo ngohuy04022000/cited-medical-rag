@@ -66,6 +66,14 @@ def _get_int(name: str, default: int, min_value: Optional[int] = None) -> int:
     return value
 
 
+def _get_optional_float(name: str, default: Optional[float]) -> Optional[float]:
+    """Like _get_float, but "none"/"omit" means "do not send this parameter"."""
+    raw = os.environ.get(name)
+    if raw is not None and raw.strip().lower() in ("none", "omit"):
+        return None
+    return _get_float(name, default)
+
+
 def _get_float(name: str, default: float) -> float:
     raw = os.environ.get(name)
     if raw is None or raw.strip() == "":
@@ -87,7 +95,7 @@ class Settings:
     backend: str
     model: str
     max_tokens: int
-    temperature: float
+    temperature: Optional[float]  # None = omit (newer models reject it)
     request_timeout: float
     max_retries: int
     docs_dir: str
@@ -109,7 +117,7 @@ def get_settings() -> Settings:
         backend=_normalize_backend(os.environ.get("RAG_BACKEND", "anthropic")),
         model=os.environ.get("ANTHROPIC_MODEL", _DEFAULT_MODEL),
         max_tokens=_get_int("RAG_MAX_TOKENS", 600),
-        temperature=_get_float("RAG_TEMPERATURE", 0.0),
+        temperature=_get_optional_float("RAG_TEMPERATURE", 0.0),
         request_timeout=_get_float("RAG_REQUEST_TIMEOUT", 30.0),
         max_retries=_get_int("RAG_MAX_RETRIES", 3),
         docs_dir=os.environ.get("RAG_DOCS_DIR", _DEFAULT_DOCS_DIR),

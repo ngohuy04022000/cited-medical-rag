@@ -383,7 +383,9 @@ async function refreshHealth() {
     const r = await fetch(`${API_BASE}/health`);
     const data = await r.json();
     dotStatus.className = "dot " + (data.generation_ready ? "ok" : (data.backend === "local" ? "local" : "bad"));
-    txtStatus.textContent = data.generation_ready ? "Sẵn sàng" : "Chưa cấu hình API key";
+    txtStatus.textContent = data.generation_ready
+      ? "Sẵn sàng"
+      : (data.backend === "hf" ? "Chưa tải model cục bộ" : "Chưa cấu hình API key");
     pillBackend.textContent = "backend: " + data.backend + (data.backend === "local" ? " (offline)" : "");
     pillChunks.textContent = "tài liệu: " + data.num_chunks + " đoạn";
   } catch (e) {
@@ -392,7 +394,13 @@ async function refreshHealth() {
   }
 }
 
+let inFlight = false;
+
 async function sendQuestion(question) {
+  // Enter and the suggestion chips bypass the disabled send button, so guard
+  // here to keep one request in flight at a time.
+  if (inFlight) return;
+  inFlight = true;
   addMessage("user", escapeHtml(question));
   const typingRow = addTyping();
   sendBtn.disabled = true;
@@ -462,6 +470,7 @@ async function sendQuestion(question) {
     typingRow.remove();
     addMessage("bot", `<span style="color:var(--danger)">Không thể kết nối tới máy chủ. Kiểm tra lại server.</span>`);
   } finally {
+    inFlight = false;
     sendBtn.disabled = false;
     inputEl.focus();
   }
@@ -469,7 +478,7 @@ async function sendQuestion(question) {
 
 function handleSend() {
   const q = inputEl.value.trim();
-  if (!q) return;
+  if (!q || inFlight) return;
   inputEl.value = "";
   inputEl.style.height = "auto";
   sendQuestion(q);

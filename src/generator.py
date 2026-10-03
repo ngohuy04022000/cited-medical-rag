@@ -110,25 +110,44 @@ def generate_answer(
         f'Answer (cite sources using [Source: filename], or say "{REFUSAL_PHRASE}" if not found):'
     )
 
+    request = {
+        "model": settings.model,
+        "max_tokens": settings.max_tokens,
+        "system": SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": user_message}],
+    }
+    # Models newer than Claude Opus 4.6 reject `temperature`; RAG_TEMPERATURE=none
+    # omits it so the same code runs against them.
+    if settings.temperature is not None:
+        request["temperature"] = settings.temperature
+
     try:
-        response = client.messages.create(
-            model=settings.model,
-            max_tokens=settings.max_tokens,
-            temperature=settings.temperature,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
-        )
+        response = client.messages.create(**request)
     except anthropic.APIError as exc:  # network / status / timeout after retries
         logger.error("Anthropic API call failed: %s", exc)
         raise GenerationError(f"LLM generation failed: {exc}") from exc
 
-    if not response.content:
-        # Defensive: a stop_reason with no content blocks (e.g. empty completion)
-        # would otherwise raise an unhandled IndexError below.
-        logger.error("Anthropic response had no content blocks (stop_reason=%s)", response.stop_reason)
-        raise GenerationError("LLM returned an empty response.")
+    if response.stop_reason == "refusal":
+        # The model declined for safety reasons; treat it as "can't answer"
+        # rather than surfacing an empty or partial string.
+        logger.warning("Anthropic response stopped with stop_reason=refusal")
+        return REFUSAL_PHRASE
 
-    return response.content[0].text.strip()
+    # Join every text block. Models with thinking enabled return a thinking
+    # block before the text, so content[0] is not necessarily the answer.
+    text = "".join(
+        block.text for block in response.content if getattr(block, "type", None) == "text"
+    ).strip()
+    if not text:
+        # Defensive: no text blocks (e.g. an empty completion) is an error,
+        # not an empty answer.
+        logger.error(
+            "Anthropic response had no text content (stop_reason=%s)", response.stop_reason
+        )
+        raise GenerationError("LLM returned an empty response.")
+    if response.stop_reason == "max_tokens":
+        logger.warning("Answer truncated at RAG_MAX_TOKENS=%s", settings.max_tokens)
+    return text
 
 
 # ---------------------------------------------------------------------------

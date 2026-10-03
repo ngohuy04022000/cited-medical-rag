@@ -9,3 +9,4 @@ __pycache__/
 *.md
 !knowledge_base/*.md
 README.md
+models/

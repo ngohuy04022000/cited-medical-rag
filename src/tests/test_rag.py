@@ -14,7 +14,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 import anthropic
-import httpx
+import httpx2 as httpx
 
 from src.chunker import _chunk_markdown, load_documents
 from src.config import get_settings, _normalize_backend
@@ -202,6 +202,10 @@ class TestConfig:
         assert settings.top_k == 9
         assert settings.temperature == 0.3
 
+    def test_temperature_none_is_omitted(self, monkeypatch):
+        monkeypatch.setenv("RAG_TEMPERATURE", "none")
+        assert get_settings().temperature is None
+
     def test_invalid_int_falls_back_to_default(self, monkeypatch):
         monkeypatch.setenv("RAG_TOP_K", "not-a-number")
         settings = get_settings()
@@ -248,7 +252,8 @@ class TestGenerator:
         mock_client = MagicMock()
         mock_client.messages.create.return_value.content = [
             MagicMock(
-                text="Glaucoma damages the optic nerve. [Source: 01_glaucoma.md]"
+                type="text",
+                text="Glaucoma damages the optic nerve. [Source: 01_glaucoma.md]",
             )
         ]
         chunks = [{"text": "Glaucoma is...", "source": "01_glaucoma.md"}]
@@ -259,7 +264,7 @@ class TestGenerator:
         """If the LLM itself returns the refusal phrase, it is returned unchanged."""
         mock_client = MagicMock()
         mock_client.messages.create.return_value.content = [
-            MagicMock(text=REFUSAL_PHRASE)
+            MagicMock(type="text", text=REFUSAL_PHRASE)
         ]
         chunks = [{"text": "Unrelated content.", "source": "03_cataract.md"}]
         answer = generate_answer("What is the price of surgery?", chunks, client=mock_client)
@@ -462,3 +467,44 @@ class TestResilience:
         chunks = [{"text": "Glaucoma is...", "source": "01_glaucoma.md"}]
         with pytest.raises(GenerationError, match="empty response"):
             generate_answer("What is glaucoma?", chunks, client=mock_client)
+
+
+# ---------------------------------------------------------------------------
+# TestResponseShapes — responses from newer models
+# ---------------------------------------------------------------------------
+
+class TestResponseShapes:
+    CHUNKS = [{"text": "Glaucoma is...", "source": "01_glaucoma.md"}]
+
+    def _client(self, blocks, stop_reason="end_turn"):
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value.content = blocks
+        mock_client.messages.create.return_value.stop_reason = stop_reason
+        return mock_client
+
+    def test_thinking_block_before_text_is_skipped(self):
+        client = self._client([
+            MagicMock(type="thinking", thinking=""),
+            MagicMock(type="text", text="Answer. [Source: 01_glaucoma.md]"),
+        ])
+        assert generate_answer("q", self.CHUNKS, client=client) == "Answer. [Source: 01_glaucoma.md]"
+
+    def test_safety_refusal_maps_to_refusal_phrase(self):
+        client = self._client([], stop_reason="refusal")
+        assert generate_answer("q", self.CHUNKS, client=client) == REFUSAL_PHRASE
+
+    def test_temperature_omitted_when_none(self):
+        import dataclasses
+
+        settings = dataclasses.replace(get_settings(), temperature=None)
+        client = self._client([MagicMock(type="text", text="A [Source: 01_glaucoma.md]")])
+        generate_answer("q", self.CHUNKS, client=client, settings=settings)
+        assert "temperature" not in client.messages.create.call_args.kwargs
+
+    def test_temperature_sent_when_set(self):
+        import dataclasses
+
+        settings = dataclasses.replace(get_settings(), temperature=0.0)
+        client = self._client([MagicMock(type="text", text="A [Source: 01_glaucoma.md]")])
+        generate_answer("q", self.CHUNKS, client=client, settings=settings)
+        assert client.messages.create.call_args.kwargs["temperature"] == 0.0
