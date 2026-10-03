@@ -85,6 +85,23 @@ All three tests were happy-path. I added:
 
 ---
 
+## Review pass — AI-assisted audit of the whole repo
+
+**My prompt:** asked an AI coding assistant (Claude Code) to deep-scan the project
+against its requirements, fix what it found, and verify each fix.
+
+**What it found and what changed:**
+- **Bugs found:** `hf` backend errors surfaced as a generic 500; the offline backend
+  answered questions about facts absent from the docs (price, cost); `eval.py` always
+  exited 0; `temperature` was always sent although newer Claude models reject it; only
+  `content[0]` was read, which breaks when a thinking block comes first; requirements
+  were not pinned. All fixed, with regression tests (76 in `src/tests`).
+
+**My takeaway:** every fix counts only once a test reproduces the failure first; each
+bug above now has a regression test.
+
+---
+
 ## Where AI Helped, and Where It Was Wrong
 
 1. **Helped:** Outlined the retrieval architecture options quickly; saved ~15 min of

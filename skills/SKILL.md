@@ -65,9 +65,11 @@ The retrieval guard handles "nothing was retrieved at all."
 
 Always test refusal with at least 2 out-of-scope questions before shipping.
 Check with a simple string match — don't use the LLM to judge its own refusals.
+An answer that cites a source but also says part of the question is unanswered is a
+partial answer, not a refusal, so require "phrase present AND no citation":
 
 ```python
-refused = REFUSAL_PHRASE.lower() in answer.lower()
+refused = REFUSAL_PHRASE.lower() in answer.lower() and "[Source:" not in answer
 assert refused, f"Should have refused but said: {answer}"
 ```
 
