@@ -1,6 +1,44 @@
 # Cited Medical RAG
 
+A retrieval-augmented question-answering assistant for retinal diseases (glaucoma,
+diabetic retinopathy, cataract, AMD) that **cites the passage behind every claim** and
+**refuses instead of guessing** when the answer is not in its knowledge base.
+
 **Author:** Ngo Tri Huy
+
+![Answer with numbered citations](docs/screenshots/02_answer_with_citation.png)
+
+## Highlights
+
+- **Grounded answers.** Every sentence carries a `[Source: file]` citation, rendered in
+  the web UI as numbered footnotes linked to the exact excerpt.
+- **Refusal as a feature.** A two-level guard (retrieval floor + an exact refusal
+  phrase) answers "not in the provided documents" rather than hallucinating, which
+  matters in a medical setting.
+- **Three interchangeable backends:** Claude API, a small LLM running fully on your
+  machine (Qwen2.5-1.5B via Transformers), or an offline extractive mode that needs no
+  key or model download.
+- **Cross-document answers** via top-k retrieval with a per-document diversity cap.
+- **Production touches:** FastAPI service with Swagger docs, Docker image (non-root,
+  healthcheck), env-based config, structured logging, retries and timeouts.
+- **Tested:** 76 unit tests that need no API key, plus a 5-question eval (3 answerable,
+  2 must-refuse) that runs against any backend and gates CI.
+
+## Quick start (offline, no API key)
+
+```bash
+pip install -r requirements.txt
+RAG_BACKEND=local uvicorn src.api:app     # then open http://localhost:8000
+```
+
+Ask questions **in English** (the knowledge base is English).
+
+> **Background:** this started as a timed take-home exercise for an AI-engineering role
+> (build a RAG that must cite sources and refuse when the answer is absent). I have
+> since extended it with the on-device LLM backend, the web UI, the API service and
+> Docker image, and a hardening pass. `PROCESS_LOG.md` records how I used AI tools
+> while building it and where I overrode them. The knowledge base is short sample
+> material, not clinical guidance.
 
 ---
 
@@ -12,7 +50,7 @@ Requires **Python 3.11+** (the pinned numpy needs it). Dependencies are pinned t
 exact versions in `requirements.txt`.
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/ngohuy04022000/cited-medical-rag.git
 cd cited-medical-rag
 pip install -r requirements.txt
 ```
@@ -219,7 +257,7 @@ enforces citation format and an exact refusal phrase. The Anthropic client is cr
 once per pipeline (cached) with automatic retries and a request timeout; a final failure
 is wrapped in `GenerationError` and surfaced cleanly to the CLI/API.
 
-### What changed in this hardening pass
+### Hardening pass
 
 - **Efficiency:** the Anthropic client is now created once and reused (previously a new
   client was built on every query); the retriever indexes section headings for better
@@ -234,7 +272,7 @@ is wrapped in `GenerationError` and surfaced cleanly to the CLI/API.
 
 ---
 
-## Hard Constraints Met
+## Design Constraints and How They Are Met
 
 | Requirement | How |
 |-------------|-----|

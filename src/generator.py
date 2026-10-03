@@ -197,7 +197,9 @@ def term_coverage(question: str, chunks: List[Dict]) -> float:
 
 
 def _sentences(text: str) -> List[str]:
-    return [s.strip() for s in _SENTENCE_SPLIT_RE.split(text.strip()) if s.strip()]
+    # Collapse the source documents' hard line wraps so a quoted sentence reads
+    # as one line instead of breaking mid-sentence.
+    return [" ".join(s.split()) for s in _SENTENCE_SPLIT_RE.split(text.strip()) if s.strip()]
 
 
 def extractive_answer(

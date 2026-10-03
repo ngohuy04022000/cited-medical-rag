@@ -125,6 +125,10 @@
     white-space:pre-wrap;
   }
   .msg.user .bubble{background:var(--text);border-color:var(--text);color:#fff;}
+  /* Bot bubbles hold generated markup: keep pre-wrap for the answer text only,
+     so template indentation and newlines are not rendered as visible gaps. */
+  .msg.bot .bubble{white-space:normal;}
+  .msg.bot .bubble .answer{white-space:pre-wrap;}
   .msg.bot .bubble.refused{border-color:#fecaca;background:#fef2f2;}
 
   .cite{
@@ -262,12 +266,12 @@
 
     <div class="empty" id="emptyState">
       <h2>Bạn muốn hỏi gì về bệnh võng mạc?</h2>
-      <p>Chọn một câu hỏi mẫu hoặc gõ câu hỏi của riêng bạn bên dưới.</p>
+      <p>Chọn một câu hỏi mẫu hoặc gõ câu hỏi của riêng bạn bên dưới (bằng tiếng Anh — kho tài liệu viết bằng tiếng Anh).</p>
       <div class="chips">
-        <div class="chip" data-q="Glaucoma là gì và tại sao phát hiện sớm lại quan trọng?">Glaucoma là gì?</div>
-        <div class="chip" data-q="Các giai đoạn của bệnh võng mạc tiểu đường là gì?">Giai đoạn võng mạc tiểu đường</div>
+        <div class="chip" data-q="What is glaucoma and why is early detection important?">Glaucoma là gì?</div>
+        <div class="chip" data-q="What are the stages of diabetic retinopathy?">Giai đoạn võng mạc tiểu đường</div>
         <div class="chip" data-q="What conditions does the AI screening platform screen for and what are risk factors?">Nền tảng sàng lọc AI phát hiện gì? (đa nguồn)</div>
-        <div class="chip" data-q="Tỷ lệ thành công của phẫu thuật glaucoma là bao nhiêu?">Tỷ lệ thành công phẫu thuật? (kỳ vọng từ chối)</div>
+        <div class="chip" data-q="What is the reported success rate of glaucoma surgery?">Tỷ lệ thành công phẫu thuật? (kỳ vọng từ chối)</div>
       </div>
     </div>
 
@@ -277,7 +281,7 @@
 
 <footer>
   <div class="composer">
-    <textarea id="input" rows="1" placeholder="Nhập câu hỏi về glaucoma, võng mạc tiểu đường, đục thủy tinh thể, AMD…"></textarea>
+    <textarea id="input" rows="1" placeholder="Ask in English about glaucoma, diabetic retinopathy, cataract, AMD…"></textarea>
     <button class="send" id="sendBtn">Gửi</button>
   </div>
   <div class="hint">Enter để gửi · Shift+Enter xuống dòng</div>
@@ -455,8 +459,7 @@ async function sendQuestion(question) {
     }
 
     const row = addMessage("bot", "");
-    row.querySelector(".bubble").innerHTML = `
-      ${answerHtml}
+    row.querySelector(".bubble").innerHTML = `<div class="answer">${answerHtml.trim()}</div>
       <div class="meta">
         <span class="tag">confidence ${data.confidence.toFixed(2)}</span>
         <span class="tag">${data.latency_ms.toFixed(0)} ms</span>
