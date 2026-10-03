@@ -95,6 +95,7 @@ class Settings:
     max_per_source: int
     min_score: float
     local_min_confidence: float
+    local_min_term_coverage: float
     chunk_size: int
     log_level: str
     hf_model_dir: str
@@ -116,6 +117,7 @@ def get_settings() -> Settings:
         max_per_source=_get_int("RAG_MAX_PER_SOURCE", 2, min_value=1),
         min_score=_get_float("RAG_MIN_SCORE", 0.01),
         local_min_confidence=_get_float("RAG_LOCAL_MIN_CONFIDENCE", 0.12),
+        local_min_term_coverage=_get_float("RAG_LOCAL_MIN_TERM_COVERAGE", 0.75),
         chunk_size=_get_int("RAG_CHUNK_SIZE", 700, min_value=50),
         log_level=os.environ.get("RAG_LOG_LEVEL", "INFO"),
         hf_model_dir=os.environ.get("RAG_HF_MODEL_DIR", _DEFAULT_HF_MODEL_DIR),

@@ -8,7 +8,7 @@ import anthropic
 
 from src.chunker import load_documents
 from src.config import Settings, get_settings
-from src.generator import GenerationError, REFUSAL_PHRASE, extractive_answer, generate_answer
+from src.generator import GenerationError, extractive_answer, generate_answer, is_refusal
 from src.retriever import TFIDFRetriever
 
 logger = logging.getLogger("cmrag.rag")
@@ -94,6 +94,7 @@ class RAGPipeline:
                 question,
                 retrieved,
                 min_confidence=self.settings.local_min_confidence,
+                min_term_coverage=self.settings.local_min_term_coverage,
             )
         elif self.settings.backend == "hf":
             # Small LLM running fully on this machine — no API key, no network.
@@ -109,7 +110,7 @@ class RAGPipeline:
 
         sources = list(dict.fromkeys(c["source"] for c in retrieved))  # dedupe, keep order
         confidence = max((c["score"] for c in retrieved), default=0.0)
-        refused = REFUSAL_PHRASE.lower() in answer.lower()
+        refused = is_refusal(answer)
         latency_ms = round((time.perf_counter() - start) * 1000, 1)
 
         logger.info(

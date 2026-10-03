@@ -45,10 +45,18 @@ $env:RAG_BACKEND="local"; python -m src.main
 ```
 
 The same flag works for the eval (`python -m src.tests.eval`) and the API
-(`uvicorn src.api:app`). The offline backend refuses on truly out-of-scope
-questions (nothing retrieved) but cannot do the LLM's *semantic* refusal
-("relevant docs retrieved but the specific fact is absent") — use the `anthropic`
-or `hf` backend for that.
+(`uvicorn src.api:app`). The offline backend refuses when retrieval is weak
+(top score below `RAG_LOCAL_MIN_CONFIDENCE`) or when too few of the question's
+topical terms appear in the retrieved passages (below `RAG_LOCAL_MIN_TERM_COVERAGE`,
+e.g. "What is the price of cataract surgery?" — no passage mentions a price).
+That coverage check is lexical: it approximates, but is not as reliable as, the
+LLM's *semantic* refusal — use the `anthropic` or `hf` backend for that.
+
+> **Language:** the knowledge base is in English and retrieval is TF-IDF with an
+> English stop list, so questions must be asked **in English**. A Vietnamese
+> question (e.g. "Bệnh tăng nhãn áp là gì?") shares no terms with the corpus and is
+> refused. Multilingual support needs a multilingual embedding retriever (see the
+> upgrade path under *Architecture*).
 
 #### Run with a local LLM — no API key, runs on your machine
 
@@ -87,6 +95,7 @@ python -m src.tests.eval
 ```
 
 Runs 3 answerable + 2 must-refuse questions and prints PASS/FAIL for each.
+Exits with a non-zero status if any question fails, so it can gate CI.
 
 ### 5. Run as a REST API service (for delivery / demo)
 
@@ -136,7 +145,7 @@ docker build -t cited-medical-rag .
 docker run -e ANTHROPIC_API_KEY=sk-... -p 8000:8000 cited-medical-rag
 ```
 
-The image includes a `HEALTHCHECK` that polls `/health`.
+The image runs as an unprivileged `app` user and includes a `HEALTHCHECK` that polls `/health`.
 
 ### 7. Run the unit tests
 
@@ -168,6 +177,7 @@ All tunables are environment variables with safe defaults (see `.env.example`):
 | `RAG_MAX_PER_SOURCE` | `2` | Diversity cap per document |
 | `RAG_MIN_SCORE` | `0.01` | Relevance floor for retrieval |
 | `RAG_LOCAL_MIN_CONFIDENCE` | `0.12` | Offline backend refuses below this top score |
+| `RAG_LOCAL_MIN_TERM_COVERAGE` | `0.75` | Offline backend refuses when fewer than this fraction of the question's topical terms appear in the retrieved passages |
 | `RAG_CHUNK_SIZE` | `700` | Target chunk size (chars) |
 | `RAG_LOG_LEVEL` | `INFO` | Logging verbosity |
 
@@ -215,8 +225,9 @@ is wrapped in `GenerationError` and surfaced cleanly to the CLI/API.
   surfacing; structured logging; centralized, validated configuration.
 - **Features:** FastAPI REST service (`/query`, `/health`, Swagger `/docs`), Docker image
   with healthcheck, per-answer confidence/latency/refusal flags, richer CLI output.
-- **Tests:** expanded from 13 to 29 (chunker sections, config, generator error handling,
-  and the HTTP layer) — all pass without an API key.
+- **Tests:** expanded from 13 to 71 (chunker sections, config, generator error handling,
+  offline refusal, the on-device backend, and the HTTP layer) — all pass without an
+  API key or model download.
 
 ---
 
@@ -225,7 +236,7 @@ is wrapped in `GenerationError` and surfaced cleanly to the CLI/API.
 | Requirement | How |
 |-------------|-----|
 | Answers cite source passage | System prompt enforces `[Source: filename]`; the on-device `hf` backend adds a deterministic safety net that guarantees a citation is always present |
-| Refuse when answer not present | Two-level: score=0 → empty retrieval → immediate refusal; score>0 → LLM instructed to refuse if context doesn't contain answer |
+| Refuse when answer not present | Two-level: nothing above `RAG_MIN_SCORE` retrieved → immediate refusal with no generation call; otherwise the LLM is instructed to refuse if the context doesn't contain the answer (the offline backend uses a score floor + query-term coverage check instead). Note that loosely related chunks are often retrieved even for out-of-scope questions (e.g. the depression question in Q5 retrieves a cataract passage), so in practice most refusals come from the second level. An answer that cites sources is never counted as a refusal, even if it also says part of the question is unanswered. |
 | Cross-document questions | top_k=5 with per-source diversity limit pulls from multiple docs |
 | 5-question eval (3 answerable, 2 refuse) | `src/tests/eval.py`, runnable against any backend |
 

@@ -1,7 +1,9 @@
 """
 5-question evaluation for the Cited Medical RAG system.
 
-Requires ANTHROPIC_API_KEY to be set.
+Runs against any backend (RAG_BACKEND=anthropic needs ANTHROPIC_API_KEY;
+local and hf need no key). Exits non-zero if any question fails, so it can
+gate CI.
 Run with: python -m src.tests.eval
 
 Questions:
@@ -20,13 +22,13 @@ load_dotenv()
 
 from src.config import get_settings
 from src.rag import RAGPipeline
-from src.generator import REFUSAL_PHRASE
+from src.generator import is_refusal
 
 # refuse_kind:
-#   "out_of_scope"      — nothing relevant is retrieved; both backends refuse.
-#   "in_scope_no_answer" — relevant docs are retrieved but lack the specific fact;
-#                          only the Anthropic (LLM) backend can refuse here, so the
-#                          offline backend skips the assertion for this case.
+#   "out_of_scope"       — the question is unrelated to the knowledge base.
+#   "in_scope_no_answer" — relevant docs are retrieved but lack the specific fact.
+#                          The LLM backends judge this semantically; the offline
+#                          backend approximates it with a query-term coverage check.
 EVAL_QUESTIONS = [
     {
         "id": "Q1",
@@ -75,8 +77,6 @@ def run_eval() -> int:
 
     rag = RAGPipeline(settings=settings)
     passed = 0
-    skipped = 0
-    enforced = 0
 
     print("=" * 60)
     print(f"Cited Medical RAG - 5-Question Evaluation  (backend: {settings.backend})")
@@ -85,42 +85,25 @@ def run_eval() -> int:
     for q in EVAL_QUESTIONS:
         result = rag.query(q["question"])
         answer = result["answer"]
-        refused = REFUSAL_PHRASE.lower() in answer.lower()
-
-        # The offline backend can't do semantic refusal, so don't hold it to that.
-        skip = (
-            settings.backend == "local"
-            and q.get("refuse_kind") == "in_scope_no_answer"
-        )
-
-        if skip:
-            status = "SKIP"
-            skipped += 1
-        else:
-            enforced += 1
-            ok = refused if q["expected"] == "refuse" else not refused
-            status = "PASS" if ok else "FAIL"
-            if ok:
-                passed += 1
+        refused = is_refusal(answer)
+        ok = refused if q["expected"] == "refuse" else not refused
+        status = "PASS" if ok else "FAIL"
+        if ok:
+            passed += 1
 
         print(f"\n[{status}] {q['id']} ({q['note']})")
         print(f"  Q: {q['question']}")
         print(f"  Expected: {q['expected']}  |  Refused: {refused}")
-        if skip:
-            print("  (offline backend cannot do semantic refusal - needs RAG_BACKEND=anthropic)")
         if result["sources"]:
             print(f"  Sources: {', '.join(result['sources'])}")
         preview = answer[:200] + ("..." if len(answer) > 200 else "")
         print(f"  A: {preview}")
 
     print("\n" + "=" * 60)
-    summary = f"Result: {passed}/{enforced} passed"
-    if skipped:
-        summary += f"  ({skipped} skipped - offline backend)"
-    print(summary)
+    print(f"Result: {passed}/{len(EVAL_QUESTIONS)} passed")
     print("=" * 60)
     return passed
 
 
 if __name__ == "__main__":
-    run_eval()
+    sys.exit(0 if run_eval() == len(EVAL_QUESTIONS) else 1)

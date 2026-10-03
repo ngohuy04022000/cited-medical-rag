@@ -14,12 +14,17 @@ test suite — never pays the model-load cost unless a query actually needs it.
 """
 
 import logging
-import re
 import threading
 from typing import Dict, List, Optional
 
 from src.config import Settings, get_settings
-from src.generator import REFUSAL_PHRASE, SYSTEM_PROMPT, build_context
+from src.generator import (
+    _CITATION_RE,
+    GenerationError,
+    REFUSAL_PHRASE,
+    SYSTEM_PROMPT,
+    build_context,
+)
 
 logger = logging.getLogger("cmrag.local_llm")
 
@@ -34,9 +39,6 @@ _ONESHOT = (
     "Question: What does glaucoma damage?\n"
     "Answer: Glaucoma damages the optic nerve. [Source: 01_glaucoma.md]\n"
 )
-
-_CITATION_RE = re.compile(r"\[Source:\s*[^\]]+\]")
-
 
 def _ensure_citations(answer: str, retrieved_chunks: List[Dict]) -> str:
     """Guarantee the hard constraint: a non-refusal answer must carry at least
@@ -55,8 +57,12 @@ def _ensure_citations(answer: str, retrieved_chunks: List[Dict]) -> str:
     return f"{answer.rstrip()} {tags}"
 
 
-class LocalLLMError(RuntimeError):
-    """Raised when the local model cannot be loaded or generation fails."""
+class LocalLLMError(GenerationError):
+    """Raised when the local model cannot be loaded or generation fails.
+
+    Subclasses GenerationError so the CLI and API surface its actionable
+    message (e.g. "model directory not found") instead of a generic 500.
+    """
 
 
 # Process-wide singleton so the ~3 GB model is loaded at most once, guarded for

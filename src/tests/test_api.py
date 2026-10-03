@@ -150,3 +150,30 @@ def test_unhandled_exception_returns_clean_500(client, monkeypatch):
     assert "detail" in resp.json()
     assert "TypeError" not in resp.text
     assert "Traceback" not in resp.text
+
+
+def test_hf_backend_without_model_dir_is_not_ready(client, monkeypatch, tmp_path):
+    c, _ = client
+    hf_settings = dataclasses.replace(
+        api_mod.settings, backend="hf", hf_model_dir=str(tmp_path / "missing")
+    )
+    monkeypatch.setattr(api_mod, "settings", hf_settings)
+    assert c.get("/health").json()["generation_ready"] is False
+    resp = c.post("/query", json={"question": "What is glaucoma?"})
+    assert resp.status_code == 503
+    assert "model directory not found" in resp.json()["detail"]
+
+
+def test_local_llm_error_maps_to_502(client, monkeypatch):
+    from src.local_llm import LocalLLMError
+
+    c, fake = client
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    def fail(question):
+        raise LocalLLMError("Local model generation failed: out of memory")
+
+    fake.query = fail
+    resp = c.post("/query", json={"question": "What is glaucoma?"})
+    assert resp.status_code == 502
+    assert "out of memory" in resp.json()["detail"]

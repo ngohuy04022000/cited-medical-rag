@@ -41,6 +41,18 @@ class GenerationError(RuntimeError):
     """Raised when the LLM call fails after the SDK exhausts its retries."""
 
 
+_CITATION_RE = re.compile(r"\[Source:\s*[^\]]+\]")
+
+
+def is_refusal(answer: str) -> bool:
+    """True when the answer is a refusal rather than a (possibly partial) answer.
+
+    An answer that contains the refusal phrase but also cites sources is a
+    partial answer (some facts found, others not), so it is not a refusal.
+    """
+    return REFUSAL_PHRASE.lower() in answer.lower() and not _CITATION_RE.search(answer)
+
+
 def build_context(chunks: List[Dict]) -> str:
     parts = []
     for c in chunks:
@@ -127,6 +139,16 @@ _WORD_RE = re.compile(r"[A-Za-z][A-Za-z\-]+")
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
 
+# Question filler words that carry no topical meaning but are missing from
+# sklearn's stop list; they must not count as "missing" from the context.
+_QUESTION_FILLER = {
+    "does", "did", "doing", "like", "look", "looks", "tell", "explain",
+    "describe", "important", "available", "main", "kind", "kinds", "type",
+    "types", "way", "ways", "used", "use",
+}
+_STEM_LEN = 5
+
+
 def _content_terms(text: str) -> set:
     """Lowercased non-stopword tokens used for sentence/query overlap scoring."""
     return {
@@ -134,6 +156,25 @@ def _content_terms(text: str) -> set:
         for w in _WORD_RE.findall(text)
         if w.lower() not in ENGLISH_STOP_WORDS
     }
+
+
+def term_coverage(question: str, chunks: List[Dict]) -> float:
+    """Fraction of the question's topical terms that appear in the chunks.
+
+    Terms are matched on a short prefix so inflections still match
+    ("screened" ~ "screening"). A low coverage means the question asks about
+    something the retrieved passages never mention (e.g. "cost", "success
+    rate"), even if other words overlapped enough to retrieve them.
+    """
+    q_terms = _content_terms(question) - _QUESTION_FILLER
+    if not q_terms:
+        return 1.0
+    ctx_terms = set()
+    for c in chunks:
+        ctx_terms |= _content_terms(f"{c.get('section', '')} {c['text']}")
+    ctx_stems = {t[:_STEM_LEN] for t in ctx_terms}
+    covered = sum(1 for t in q_terms if t in ctx_terms or t[:_STEM_LEN] in ctx_stems)
+    return covered / len(q_terms)
 
 
 def _sentences(text: str) -> List[str]:
@@ -145,6 +186,7 @@ def extractive_answer(
     retrieved_chunks: List[Dict],
     max_sentences: int = 3,
     min_confidence: float = 0.0,
+    min_term_coverage: float = 0.0,
 ) -> str:
     """
     Build a cited answer offline by selecting the retrieved sentences that
@@ -153,16 +195,22 @@ def extractive_answer(
     Refuses (REFUSAL_PHRASE) when:
     - retrieval returned nothing, or
     - the best retrieval score is below `min_confidence` (weak match — the
-      offline backend declines rather than answer from a barely-relevant chunk).
+      offline backend declines rather than answer from a barely-relevant chunk), or
+    - fewer than `min_term_coverage` of the question's topical terms appear in
+      the retrieved passages (the question asks about something they never
+      mention, e.g. a cost or a success rate).
 
-    It cannot judge "strongly-retrieved context that still doesn't contain the
-    specific fact"; that semantic refusal is the Anthropic backend's job.
+    The coverage check is lexical: it approximates, but does not replace, the
+    LLM backends' semantic judgement of whether the context answers the question.
     """
     if not retrieved_chunks:
         return REFUSAL_PHRASE
 
     top_score = max((c.get("score", 1.0) for c in retrieved_chunks), default=0.0)
     if top_score < min_confidence:
+        return REFUSAL_PHRASE
+
+    if term_coverage(question, retrieved_chunks) < min_term_coverage:
         return REFUSAL_PHRASE
 
     q_terms = _content_terms(question)

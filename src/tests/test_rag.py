@@ -26,6 +26,8 @@ from src.generator import (
     build_context,
     extractive_answer,
     generate_answer,
+    is_refusal,
+    term_coverage,
 )
 
 DOCS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "knowledge_base")
@@ -321,6 +323,49 @@ class TestExtractiveBackend:
         assert "First sentence here." in answer
         assert "[Source: x.md]" in answer
 
+    def test_low_term_coverage_refuses(self):
+        chunks = [{"text": "Cataract surgery replaces the cloudy lens.", "source": "03_cataract.md"}]
+        answer = extractive_answer(
+            "What is the price of cataract surgery?", chunks, min_term_coverage=0.75
+        )
+        assert answer == REFUSAL_PHRASE
+
+    def test_full_term_coverage_answers(self):
+        chunks = [{"text": "Cataract surgery replaces the cloudy lens.", "source": "03_cataract.md"}]
+        answer = extractive_answer(
+            "What does cataract surgery replace?", chunks, min_term_coverage=0.75
+        )
+        assert "[Source: 03_cataract.md]" in answer
+
+
+class TestTermCoverage:
+    def test_inflections_match_by_prefix(self):
+        chunks = [{"text": "Patients undergo screening.", "source": "x.md"}]
+        assert term_coverage("Which patients are screened?", chunks) == 1.0
+
+    def test_filler_words_are_ignored(self):
+        chunks = [{"text": "Glaucoma damages the optic nerve.", "source": "x.md"}]
+        assert term_coverage("Tell me what glaucoma does", chunks) == 1.0
+
+    def test_missing_topic_lowers_coverage(self):
+        chunks = [{"text": "Glaucoma damages the optic nerve.", "source": "x.md"}]
+        assert term_coverage("glaucoma cost", chunks) == 0.5
+
+
+class TestIsRefusal:
+    def test_exact_phrase_is_refusal(self):
+        assert is_refusal(REFUSAL_PHRASE)
+
+    def test_cited_answer_is_not_refusal(self):
+        assert not is_refusal("Glaucoma damages the optic nerve. [Source: 01_glaucoma.md]")
+
+    def test_partial_answer_with_citation_is_not_refusal(self):
+        answer = (
+            "Glaucoma damages the optic nerve. [Source: 01_glaucoma.md] "
+            + REFUSAL_PHRASE
+        )
+        assert not is_refusal(answer)
+
 
 # ---------------------------------------------------------------------------
 # TestOfflinePipeline — full pipeline end-to-end without an API key
@@ -344,6 +389,10 @@ class TestOfflinePipeline:
         result = offline_rag.query("What medications are prescribed for clinical depression?")
         assert result["refused"]
         assert result["answer"] == REFUSAL_PHRASE
+
+    def test_in_scope_question_with_absent_fact_refuses(self, offline_rag):
+        result = offline_rag.query("What is the reported success rate of glaucoma surgery?")
+        assert result["refused"]
 
     def test_no_api_client_is_built_offline(self, offline_rag):
         offline_rag.query("What is glaucoma?")

@@ -15,6 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src ./src
 COPY knowledge_base ./knowledge_base
 
+# Run as an unprivileged user rather than root.
+RUN useradd --create-home --uid 1000 app && chown -R app:app /app
+USER app
+
 EXPOSE 8000
 
 # ANTHROPIC_API_KEY is provided at runtime, e.g.:

@@ -13,8 +13,13 @@ and needs no model files.
 from unittest.mock import patch
 
 from src.config import _normalize_backend
-from src.generator import REFUSAL_PHRASE
-from src.local_llm import _ensure_citations, local_llm_answer
+import dataclasses
+
+import pytest
+
+from src.config import get_settings
+from src.generator import REFUSAL_PHRASE, GenerationError
+from src.local_llm import LocalLLMError, _ensure_citations, local_llm_answer
 
 
 class TestCitationSafetyNet:
@@ -59,3 +64,17 @@ class TestLocalLLMBackend:
     def test_backend_aliases_route_to_hf(self):
         for alias in ("hf", "huggingface", "qwen", "local-llm"):
             assert _normalize_backend(alias) == "hf"
+
+
+class TestLocalLLMErrors:
+    def test_local_llm_error_is_a_generation_error(self):
+        # CLI and API catch GenerationError to show a clean, actionable message.
+        assert issubclass(LocalLLMError, GenerationError)
+
+    def test_missing_model_dir_raises_actionable_error(self, tmp_path):
+        settings = dataclasses.replace(
+            get_settings(), backend="hf", hf_model_dir=str(tmp_path / "missing")
+        )
+        chunks = [{"text": "Glaucoma damages the optic nerve.", "source": "01_glaucoma.md"}]
+        with pytest.raises(GenerationError, match="model directory not found"):
+            local_llm_answer("What is glaucoma?", chunks, settings=settings)

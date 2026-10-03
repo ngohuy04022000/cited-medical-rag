@@ -51,9 +51,13 @@ def _api_key_configured() -> bool:
 
 
 def _generation_ready() -> bool:
-    """The offline 'local' and on-device 'hf' backends need no key; only the
-    Anthropic backend requires one."""
-    return settings.backend in ("local", "hf") or _api_key_configured()
+    """The offline 'local' backend needs nothing; the on-device 'hf' backend
+    needs its model directory on disk; only 'anthropic' requires a key."""
+    if settings.backend == "local":
+        return True
+    if settings.backend == "hf":
+        return os.path.isdir(settings.hf_model_dir)
+    return _api_key_configured()
 
 
 @asynccontextmanager
@@ -138,13 +142,17 @@ def query(
     pipeline: RAGPipeline = Depends(get_pipeline),
 ) -> QueryResponse:
     if not _generation_ready():
-        raise HTTPException(
-            status_code=503,
-            detail=(
+        if settings.backend == "hf":
+            detail = (
+                f"Local model directory not found: {settings.hf_model_dir!r}. "
+                "Download the model (see README) or set RAG_HF_MODEL_DIR."
+            )
+        else:
+            detail = (
                 "ANTHROPIC_API_KEY is not configured. Set it, or start the server "
                 "with RAG_BACKEND=local to run offline without a key."
-            ),
-        )
+            )
+        raise HTTPException(status_code=503, detail=detail)
 
     try:
         result = pipeline.query(request.question)
